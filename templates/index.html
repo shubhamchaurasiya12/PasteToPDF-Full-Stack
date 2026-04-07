@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PasteToDoc — AI Response to PDF</title>
+<meta name="description" content="Paste any ChatGPT, Claude, or Gemini response and download a beautifully formatted PDF with proper math, tables, and code.">
+
+<!-- Preview rendering (client-side only — PDF generation stays server-side) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:      #0b0c10;
+  --surface: #12131a;
+  --border:  #1e2030;
+  --panel:   #0f1018;
+  --text:    #c8cad8;
+  --muted:   #5a5d72;
+  --accent:  #e8b44b;
+  --accent2: #7c8cf8;
+  --err:     #e06c75;
+  --ink:     #1a1a1e;
+  --ink-mid: #4a4a56;
+  --rule:    #d0cbc0;
+  --paper:   #fdfaf4;
+  --sidebar: 420px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Outfit', sans-serif;
+  display: flex; flex-direction: column;
+}
+
+/* ── Top bar ─────────────────────────────────── */
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 54px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; z-index: 10;
+}
+.logo {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'DM Serif Display', serif; font-size: 1.15rem; color: #e8e9ef;
+}
+.logo-icon {
+  width: 28px; height: 28px; background: var(--accent); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: #0b0c10; font-weight: 700; font-family: 'Fira Code', monospace;
+}
+.logo em { color: var(--accent); font-style: normal; }
+.actions { display: flex; gap: 10px; align-items: center; }
+.btn {
+  padding: 7px 16px; border-radius: 7px;
+  font-family: 'Outfit', sans-serif; font-size: 0.82rem;
+  font-weight: 500; border: none; cursor: pointer;
+  transition: all 0.18s; letter-spacing: 0.02em;
+}
+.btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost:hover { color: var(--text); border-color: #2e3050; }
+.btn-primary {
+  background: var(--accent); color: #0b0c10; font-weight: 600;
+  min-width: 148px; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #f0c265; transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(232,180,75,0.3);
+}
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Layout ──────────────────────────────────── */
+#app { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Editor ──────────────────────────────────── */
+#editor-panel {
+  width: var(--sidebar); flex-shrink: 0;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-right: 1px solid var(--border); overflow: hidden;
+}
+.panel-hdr {
+  padding: 13px 20px; font-size: 0.71rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.hint-row {
+  display: flex; gap: 5px; flex-wrap: wrap;
+  padding: 9px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.tag {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 7px;
+  font-size: 0.67rem; color: var(--muted); font-family: 'Fira Code', monospace;
+}
+#input-area {
+  flex: 1; resize: none; background: transparent; border: none; outline: none;
+  padding: 18px; font-family: 'Fira Code', monospace; font-size: 0.79rem;
+  line-height: 1.65; color: #9ea3be; caret-color: var(--accent); overflow-y: auto;
+}
+#input-area::placeholder { color: var(--muted); font-style: italic; }
+#input-area::-webkit-scrollbar { width: 5px; }
+#input-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+.editor-footer {
+  padding: 11px 16px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 9px; flex-shrink: 0;
+}
+.opt-row { display: flex; gap: 9px; }
+.opt-grp { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.opt-lbl { font-size: 0.67rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.opt-in {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; color: var(--text); font-family: 'Outfit', sans-serif;
+  font-size: 0.81rem; outline: none; width: 100%; transition: border-color 0.15s;
+}
+.opt-in:focus { border-color: var(--accent2); }
+
+/* ── Preview panel ───────────────────────────── */
+#preview-panel {
+  flex: 1; display: flex; flex-direction: column; background: #1a1b25; overflow: hidden;
+}
+.preview-hdr {
+  padding: 10px 20px; font-size: 0.71rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; min-height: 40px;
+}
+#preview-hint {
+  font-size: 0.72rem; font-weight: 400; color: var(--muted);
+  text-transform: none; letter-spacing: 0;
+}
+
+/* ── Scrollable desk ─────────────────────────── */
+#preview-scroll {
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: 32px 40px;
+  display: flex; justify-content: center; align-items: flex-start;
+}
+#preview-scroll::-webkit-scrollbar { width: 6px; }
+#preview-scroll::-webkit-scrollbar-thumb { background: #2a2b38; border-radius: 10px; }
+
+/* ── Paper ───────────────────────────────────── */
+#paper {
+  background: var(--paper); color: var(--ink);
+  width: 100%; max-width: 760px; min-height: 1050px;
+  border-radius: 3px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 20px 60px rgba(0,0,0,0.5);
+  padding: 72px 80px;
+  font-family: 'Lora', Georgia, serif; font-size: 11pt; line-height: 1.75;
+  animation: paperIn 0.3s ease;
+}
+@keyframes paperIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+/* ── Empty state ─────────────────────────────── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 600px; gap: 12px; text-align: center;
+}
+.empty-icon { font-size: 3rem; opacity: 0.3; margin-bottom: 8px; }
+.empty-state h3 { font-family: 'DM Serif Display', serif; font-size: 1.2rem; font-weight: 400; color: #888; }
+.empty-state p  { font-size: 0.82rem; color: #999; max-width: 280px; line-height: 1.5; }
+
+/* ── Doc title & meta ────────────────────────── */
+#doc-title-display {
+  font-family: 'DM Serif Display', serif; font-size: 24pt;
+  line-height: 1.2; color: #111118; margin-bottom: 6px;
+}
+#doc-meta-display {
+  font-family: 'Outfit', sans-serif; font-size: 8.5pt; color: var(--ink-mid);
+  letter-spacing: 0.05em; text-transform: uppercase;
+  margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1.5px solid var(--rule);
+}
+
+/* ── Content styles ──────────────────────────── */
+#rendered-content h1 {
+  font-family: 'DM Serif Display', serif; font-size: 20pt; font-weight: 400;
+  color: #111118; margin: 28px 0 10px; line-height: 1.25;
+}
+#rendered-content h2 {
+  font-family: 'DM Serif Display', serif; font-size: 15pt; font-weight: 400;
+  color: #111118; margin: 24px 0 8px; line-height: 1.3;
+}
+#rendered-content h3 {
+  font-family: 'Outfit', sans-serif; font-size: 11pt; font-weight: 700;
+  color: #1a1a26; margin: 20px 0 6px;
+}
+#rendered-content h4 {
+  font-family: 'Outfit', sans-serif; font-size: 10pt; font-weight: 700;
+  color: #2a2a3a; margin: 16px 0 4px; text-transform: uppercase; letter-spacing: 0.06em;
+}
+#rendered-content p { margin: 0 0 12px; orphans: 3; widows: 3; }
+#rendered-content ul, #rendered-content ol { margin: 0 0 12px 0; padding-left: 26px; }
+#rendered-content li { margin-bottom: 4px; line-height: 1.65; }
+#rendered-content li > ul, #rendered-content li > ol { margin: 4px 0; }
+#rendered-content strong { font-weight: 600; color: #111118; }
+#rendered-content em { font-style: italic; }
+#rendered-content a { color: #4a6cf7; text-decoration: underline; }
+#rendered-content blockquote {
+  margin: 12px 0 16px; padding: 10px 18px;
+  border-left: 3px solid var(--accent); background: rgba(232,180,75,0.06);
+  color: var(--ink-mid); font-style: italic;
+}
+#rendered-content hr { border: none; border-top: 1.5px solid var(--rule); margin: 24px 0; }
+#rendered-content code {
+  font-family: 'Fira Code', monospace; font-size: 0.82em;
+  background: #ede9df; color: #4a3060; padding: 1px 5px; border-radius: 3px;
+  white-space: pre-wrap; word-break: break-word;
+}
+#rendered-content pre {
+  background: #1e1e2e; border-radius: 6px; padding: 16px 20px; margin: 12px 0 16px;
+  border-left: 3px solid #7c8cf8; white-space: pre-wrap;
+  word-break: break-word; word-wrap: break-word; overflow-x: auto;
+}
+#rendered-content pre code {
+  background: transparent; color: #cdd6f4; padding: 0;
+  font-size: 0.78em; line-height: 1.6; border-radius: 0;
+}
+
+/* ── Tables ──────────────────────────────────── */
+.table-wrapper { width: 100%; overflow-x: auto; margin: 12px 0 18px; }
+#rendered-content table {
+  width: 100%; border-collapse: collapse;
+  font-family: 'Outfit', sans-serif; font-size: 9.5pt; table-layout: fixed;
+}
+#rendered-content th {
+  background: #1e1e2e; color: #e0e2f0; font-weight: 600;
+  letter-spacing: 0.04em; font-size: 8.5pt; text-transform: uppercase;
+  padding: 9px 12px; text-align: left; border: 1px solid #2e2e40;
+  word-wrap: break-word; overflow-wrap: break-word;
+}
+#rendered-content td {
+  padding: 8px 12px; border: 1px solid var(--rule);
+  vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; min-width: 0;
+}
+#rendered-content tr:nth-child(even) td { background: rgba(0,0,0,0.03); }
+
+/* ── Math ────────────────────────────────────── */
+.math-display { margin: 18px 0; text-align: center; overflow-x: auto; padding: 10px 0; }
+.math-inline  { display: inline; }
+.math-error   {
+  color: #e06c75; font-family: 'Fira Code', monospace; font-size: 0.82em;
+  background: rgba(224,108,117,0.1); padding: 2px 6px; border-radius: 3px;
+}
+
+/* ── Status bar ──────────────────────────────── */
+#statusbar {
+  padding: 6px 20px; background: var(--panel); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; font-size: 0.7rem; color: var(--muted);
+}
+.sdot {
+  width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px;
+  background: var(--muted); transition: background 0.25s;
+}
+.sdot.busy { background: var(--accent2); animation: pulse 1s infinite; }
+.sdot.ok   { background: #4caf50; }
+.sdot.err  { background: var(--err); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Toast ───────────────────────────────────── */
+#toast {
+  position: fixed; bottom: 22px; right: 22px;
+  background: #1e2030; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 16px; font-size: 0.82rem; color: var(--text);
+  opacity: 0; transform: translateY(8px); transition: all 0.25s;
+  pointer-events: none; z-index: 99;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="logo">
+    <div class="logo-icon">∑</div>
+    Paste<em>To</em>Doc
+  </div>
+  <div class="actions">
+    <button class="btn btn-ghost" onclick="clearAll()">Clear</button>
+    <button class="btn btn-ghost" onclick="loadExample()">Example</button>
+    <button class="btn btn-primary" id="export-btn" onclick="exportPDF()">
+      <span id="btn-text">⬇ Export PDF</span>
+    </button>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- Editor -->
+  <div id="editor-panel">
+    <div class="panel-hdr">
+      <span>Input</span>
+      <span id="char-count" style="font-weight:400;letter-spacing:0;text-transform:none">0 chars</span>
+    </div>
+    <div class="hint-row">
+      <span class="tag">$x^2$</span>
+      <span class="tag">$$\int$$</span>
+      <span class="tag">**bold**</span>
+      <span class="tag">| table |</span>
+      <span class="tag"># H1</span>
+      <span class="tag">```code```</span>
+    </div>
+    <textarea id="input-area"
+      placeholder="Paste your ChatGPT / Claude / Gemini response here…
+
+Supports Markdown, math ($inline$ and $$display$$),
+LaTeX \( inline \) and \[ display \], tables, code blocks."
+      oninput="onInput()" onpaste="setTimeout(onInput, 0)"
+    ></textarea>
+    <div class="editor-footer">
+      <div class="opt-row">
+        <div class="opt-grp">
+          <label class="opt-lbl">Document Title</label>
+          <input type="text" id="doc-title" class="opt-in"
+            placeholder="Optional title…" maxlength="200" oninput="renderPreview()">
+        </div>
+        <div class="opt-grp" style="max-width:100px">
+          <label class="opt-lbl">Page Size</label>
+          <select id="page-size" class="opt-in">
+            <option value="A4">A4</option>
+            <option value="Letter">Letter</option>
+            <option value="A3">A3</option>
+            <option value="Legal">Legal</option>
+          </select>
+        </div>
+      </div>
+      <div class="opt-row">
+        <div class="opt-grp">
+          <label class="opt-lbl">Author / Date</label>
+          <input type="text" id="doc-meta" class="opt-in"
+            placeholder="e.g. Jane Smith · April 2026" maxlength="200" oninput="renderPreview()">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview -->
+  <div id="preview-panel">
+    <div class="preview-hdr">
+      <span>Preview</span>
+      <span id="preview-hint">← paste to begin</span>
+    </div>
+    <div id="preview-scroll">
+      <div id="paper">
+        <div id="doc-title-display" style="display:none"></div>
+        <div id="doc-meta-display"  style="display:none"></div>
+        <div id="rendered-content">
+          <div class="empty-state">
+            <div class="empty-icon">📄</div>
+            <h3>Your document will appear here</h3>
+            <p>Paste any AI response on the left — math, tables, code, and markdown all render live.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="statusbar">
+  <div>
+    <span class="sdot" id="sdot"></span>
+    <span id="status-text">Ready</span>
+  </div>
+  <span id="word-count">0 words</span>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   Marked.js setup
+   ═══════════════════════════════════════════════ */
+marked.setOptions({ breaks: true, gfm: true });
+
+const renderer = new marked.Renderer();
+renderer.table = (header, body) =>
+  `<div class="table-wrapper"><table><thead>${header}</thead><tbody>${body}</tbody></table></div>`;
+renderer.code = (code, lang) => {
+  const esc = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return `<pre><code${lang?' class="language-'+lang+'"':''}>${esc}</code></pre>`;
+};
+marked.use({ renderer });
+
+/* ═══════════════════════════════════════════════
+   Math extraction — protect LaTeX before markdown
+   ═══════════════════════════════════════════════ */
+function extractMath(text) {
+  const blocks = [];
+  const ph = (display, math) => {
+    blocks.push({ display, math: math.trim() });
+    return `\x00M${blocks.length - 1}\x00`;
+  };
+  // display: $$ and \[
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g,   (_, m) => ph(true,  m));
+  text = text.replace(/\\\[([\s\S]*?)\\\]/g,    (_, m) => ph(true,  m));
+  // inline: \( and $
+  text = text.replace(/\\\(([\s\S]*?)\\\)/g,    (_, m) => ph(false, m));
+  text = text.replace(/\$(?=[^\s$\n])([^$\n]+?)(?<=[^\s$])\$/g, (full, m) => {
+    if (/^[\d,\.]+$/.test(m.trim())) return full;
+    return ph(false, m);
+  });
+  return { text, blocks };
+}
+
+function restoreMath(html, blocks) {
+  return html.replace(/\x00M(\d+)\x00/g, (_, i) => {
+    const { display, math } = blocks[+i];
+    const safe = math.replace(/"/g, '&quot;');
+    return display
+      ? `<div class="math-display" data-math="${safe}" data-display="1"></div>`
+      : `<span class="math-inline" data-math="${safe}"></span>`;
+  });
+}
+
+function renderKaTeX(container) {
+  container.querySelectorAll('[data-math]').forEach(el => {
+    try {
+      katex.render(el.getAttribute('data-math'), el, {
+        displayMode: el.dataset.display === '1',
+        throwOnError: false, trust: true, strict: false,
+      });
+    } catch(e) {
+      el.innerHTML = `<span class="math-error">${el.getAttribute('data-math')}</span>`;
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   Preview render (client-side, instant)
+   ═══════════════════════════════════════════════ */
+let debounce = null;
+
+function onInput() {
+  const text = document.getElementById('input-area').value;
+  document.getElementById('char-count').textContent = text.length.toLocaleString() + ' chars';
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  document.getElementById('word-count').textContent = words.toLocaleString() + ' words';
+  clearTimeout(debounce);
+  setStatus('busy', 'Rendering…');
+  debounce = setTimeout(renderPreview, 350);
+}
+
+async function renderPreview() {
+  const raw = document.getElementById('input-area').value.trim();
+  const titleVal = document.getElementById('doc-title').value.trim();
+  const metaVal = document.getElementById('doc-meta').value.trim();
+  const content = document.getElementById('rendered-content');
+  const titleEl = document.getElementById('doc-title-display');
+  const metaEl = document.getElementById('doc-meta-display');
+
+  titleEl.textContent = titleVal;
+  titleEl.style.display = titleVal ? 'block' : 'none';
+  metaEl.textContent = metaVal;
+  metaEl.style.display = metaVal ? 'block' : 'none';
+
+  if (!raw) {
+    content.innerHTML = `<div class="empty-state">...</div>`; // keep your empty state HTML
+    setStatus('idle', 'Ready');
+    document.getElementById('preview-hint').textContent = '← paste to begin';
+    return;
+  }
+
+  try {
+    const { text: safe, blocks } = extractMath(raw);
+    // ✅ FIX: await the Promise returned by marked.parse()
+    let html = await marked.parse(safe);
+    html = restoreMath(html, blocks);
+    content.innerHTML = html;
+    renderKaTeX(content);
+
+    const eqs = content.querySelectorAll('.math-display,.math-inline').length;
+    const tables = content.querySelectorAll('table').length;
+    const words = raw.split(/\s+/).filter(Boolean).length;
+    document.getElementById('preview-hint').textContent =
+      `${words} words · ${eqs} equations · ${tables} tables`;
+    setStatus('ok', 'Preview ready');
+  } catch (e) {
+    content.innerHTML = `<p style="color:#e06c75">Render error: ${e.message}</p>`;
+    setStatus('err', 'Error');
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Export PDF — server-side via Playwright
+   ═══════════════════════════════════════════════ */
+let exportBusy = false;
+
+async function exportPDF() {
+  const text = document.getElementById('input-area').value.trim();
+  if (!text)      { showToast('⚠ Paste some content first.'); return; }
+  if (exportBusy) { showToast('⏳ Already rendering…');        return; }
+
+  setExportBusy(true);
+  setStatus('busy', 'Generating PDF on server…');
+
+  try {
+    const res = await fetch('/api/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        title:    document.getElementById('doc-title').value.trim(),
+        meta:     document.getElementById('doc-meta').value.trim(),
+        pageSize: document.getElementById('page-size').value,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `Server error ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const name = (document.getElementById('doc-title').value.trim() || 'document')
+                   .replace(/[^a-z0-9]/gi, '_') + '.pdf';
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+
+    setStatus('ok', 'PDF downloaded ✓');
+    showToast('✓ PDF saved — check your Downloads');
+  } catch(err) {
+    setStatus('err', 'Export failed');
+    showToast('✗ ' + err.message);
+  } finally {
+    setExportBusy(false);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   UI helpers
+   ═══════════════════════════════════════════════ */
+function setStatus(type, msg) {
+  const dot = document.getElementById('sdot');
+  dot.className = 'sdot' + (type !== 'idle' ? ' ' + type : '');
+  document.getElementById('status-text').textContent = msg;
+}
+
+function setExportBusy(state) {
+  exportBusy = state;
+  document.getElementById('export-btn').disabled = state;
+  document.getElementById('btn-text').textContent = state ? '⏳ Rendering…' : '⬇ Export PDF';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+function clearAll() {
+  document.getElementById('input-area').value = '';
+  document.getElementById('doc-title').value  = '';
+  document.getElementById('doc-meta').value   = '';
+  onInput();
+  showToast('✓ Cleared');
+}
+
+/* ═══════════════════════════════════════════════
+   Example
+   ═══════════════════════════════════════════════ */
+function loadExample() {
+  document.getElementById('doc-title').value = 'Calculus & Linear Algebra — Quick Reference';
+  document.getElementById('doc-meta').value  = 'Generated by Claude · April 2026';
+  document.getElementById('input-area').value = `## 1. Derivatives
+
+The **derivative** of $f(x)$ is defined as:
+
+$$f'(x) = \\lim_{h \\to 0} \\frac{f(x+h) - f(x)}{h}$$
+
+### Common Derivative Rules
+
+| Rule | Formula | Notes |
+|------|---------|-------|
+| Power Rule | $\\frac{d}{dx} x^n = nx^{n-1}$ | All real $n$ |
+| Product Rule | $\\frac{d}{dx}[uv] = u'v + uv'$ | Extends to $n$ factors |
+| Chain Rule | $\\frac{d}{dx}[f(g(x))] = f'(g(x))\\cdot g'(x)$ | Composition |
+| Quotient Rule | $\\frac{d}{dx}\\left[\\frac{u}{v}\\right] = \\frac{u'v - uv'}{v^2}$ | $v \\neq 0$ |
+
+## 2. Integration
+
+$$\\int_a^b f'(x)\\,dx = f(b) - f(a)$$
+
+$$\\int e^x\\,dx = e^x + C \\qquad \\int \\frac{1}{x}\\,dx = \\ln|x| + C$$
+
+## 3. Eigenvalues
+
+For $A = \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$, eigenvalues satisfy $\\det(A - \\lambda I) = 0$:
+
+$$\\lambda = \\frac{(a+d) \\pm \\sqrt{(a-d)^2 + 4bc}}{2}$$
+
+| Property | Condition | Implication |
+|----------|-----------|-------------|
+| Symmetric | $A = A^T$ | Real eigenvalues |
+| Orthogonal | $A^T A = I$ | Preserves lengths |
+| Positive Definite | $x^TAx > 0$ | All $\\lambda > 0$ |
+| Singular | $\\det(A) = 0$ | Not invertible |
+
+## 4. Python Example
+
+\`\`\`python
+import numpy as np
+A = np.array([[4, 2], [1, 3]])
+eigenvalues, eigenvectors = np.linalg.eig(A)
+print("Eigenvalues:", eigenvalues)   # [5. 2.]
+\`\`\`
+
+> **Note:** For sparse matrices use \`scipy.sparse.linalg.eigs\` — much faster for large systems.
+`;
+  onInput();
+  showToast('✓ Example loaded');
+}
+
+// Init
+setStatus('idle', 'Ready');
+</script>
+</body>
+</html>
